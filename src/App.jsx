@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { announcements as seedAnnouncements, applications as seedApplications, degreePrograms, demoUsers, departmentReviews, documents as seedDocuments, notifications as seedNotifications, scholarships } from './lib/demoData';
 import { getApplicationProgress, getDeadlineStatus, rankScholarships, searchScholarships } from './lib/eligibility';
+import { getSupabaseSession, signInWithEmailPassword, signOutFromSupabase } from './lib/auth';
 import LoginScreenPage from './pages/LoginScreen';
 import DashboardViewPage from './pages/DashboardView';
 import ScholarshipExplorerPage from './pages/ScholarshipExplorer';
@@ -172,6 +173,41 @@ function App() {
     return () => window.clearTimeout(timer);
   }, []);
 
+  useEffect(() => {
+    if (isBooting) {
+      return undefined;
+    }
+
+    let active = true;
+
+    const hydrateSession = async () => {
+      const result = await getSupabaseSession();
+      if (!active || !result.session) {
+        return;
+      }
+
+      const user = result.session.user;
+      updateState((previous) => ({
+        ...previous,
+        isAuthenticated: true,
+        viewerRole: 'student',
+        activeView: 'dashboard',
+        authUser: {
+          id: user.id,
+          email: user.email,
+          role: 'student',
+          fullName: user.user_metadata?.full_name || user.email || 'Signed in user',
+        },
+      }));
+    };
+
+    hydrateSession();
+
+    return () => {
+      active = false;
+    };
+  }, [isBooting]);
+
   const roleKeyMap = {
     student: 'student',
     osa_admin: 'admin',
@@ -232,7 +268,7 @@ function App() {
 
   const navigate = (view) => updateState({ activeView: view });
 
-  const login = (credentials) => {
+  const login = async (credentials) => {
     const selectedRole = credentials.role || 'student';
     const account = selectedRole === 'osa_admin'
       ? demoUsers.admin
@@ -240,23 +276,44 @@ function App() {
         ? demoUsers.chair
         : demoUsers.student;
 
-    updateState((previous) => ({
-      ...previous,
-      isAuthenticated: true,
-      viewerRole: account.role,
-      activeView: 'dashboard',
-      authUser: {
-        email: credentials.email,
-        role: account.role,
-        fullName: account.fullName,
-      },
-      rememberMe: credentials.rememberMe || false,
-      savedEmail: credentials.rememberMe ? credentials.email : previous.savedEmail,
-      savedRole: credentials.rememberMe ? account.role : previous.savedRole,
-    }));
+    const authResult = await signInWithEmailPassword({
+      email: credentials.email,
+      password: credentials.password,
+    });
+
+    if (authResult.success || authResult.fallback) {
+      updateState((previous) => ({
+        ...previous,
+        isAuthenticated: true,
+        viewerRole: account.role,
+        activeView: 'dashboard',
+        authUser: {
+          id: authResult.user?.id || account.id,
+          email: credentials.email,
+          role: account.role,
+          fullName: authResult.user?.user_metadata?.full_name || account.fullName,
+        },
+        rememberMe: credentials.rememberMe || false,
+        savedEmail: credentials.rememberMe ? credentials.email : previous.savedEmail,
+        savedRole: credentials.rememberMe ? account.role : previous.savedRole,
+      }));
+
+      return {
+        success: true,
+        fallback: authResult.fallback,
+        message: authResult.message,
+      };
+    }
+
+    return {
+      success: false,
+      fallback: false,
+      message: authResult.message || 'Unable to sign in with that email and password.',
+    };
   };
 
-  const logout = () => {
+  const logout = async () => {
+    await signOutFromSupabase();
     updateState((previous) => ({
       ...previous,
       isAuthenticated: false,

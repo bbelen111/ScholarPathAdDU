@@ -289,6 +289,9 @@ export default function LoginScreen({ onLogin, rememberedEmail, rememberedRole, 
   const [password, setPassword] = useState('password123');
   const [role, setRole] = useState(rememberedRole || 'student');
   const [rememberMe, setRememberMe] = useState(isRemembered || false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [feedbackMessage, setFeedbackMessage] = useState('');
+  const [feedbackTone, setFeedbackTone] = useState('info');
   const [showForgotPassword, setShowForgotPassword] = useState(false);
   const [forgotEmail, setForgotEmail] = useState('');
   const [resetSent, setResetSent] = useState(false);
@@ -304,9 +307,23 @@ export default function LoginScreen({ onLogin, rememberedEmail, rememberedRole, 
   });
   const [createAccountSuccess, setCreateAccountSuccess] = useState(false);
 
-  const submitLogin = (event) => {
+  const submitLogin = async (event) => {
     event.preventDefault();
-    onLogin({ email, password, role, rememberMe });
+    setIsSubmitting(true);
+    setFeedbackMessage('');
+    setFeedbackTone('info');
+
+    const result = await onLogin({ email, password, role, rememberMe });
+
+    if (result?.success) {
+      setFeedbackMessage(result.fallback ? 'Signed in using the demo mode fallback.' : 'Signed in successfully.');
+      setFeedbackTone(result.fallback ? 'info' : 'success');
+    } else {
+      setFeedbackMessage(result?.message || 'Unable to sign in. Please check your credentials.');
+      setFeedbackTone('error');
+    }
+
+    setIsSubmitting(false);
   };
 
   const handleForgotPassword = (event) => {
@@ -401,7 +418,14 @@ export default function LoginScreen({ onLogin, rememberedEmail, rememberedRole, 
               </label>
               <button type="button" className="forgot-link" onClick={() => setShowForgotPassword(true)}>Forgot password?</button>
             </div>
-            <button className="primary-btn full-width" type="submit">Sign in</button>
+            {feedbackMessage && (
+              <div className={`feedback-banner feedback-banner--${feedbackTone}`}>
+                {feedbackMessage}
+              </div>
+            )}
+            <button className="primary-btn full-width" type="submit" disabled={isSubmitting}>
+              {isSubmitting ? 'Signing in…' : 'Sign in'}
+            </button>
             <div className="login-divider">
               <span>or</span>
             </div>
